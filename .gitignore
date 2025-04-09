@@ -1,0 +1,21 @@
+__pycache__/
+*.pyd
+*.dll
+*.so
+*.h5
+*.log
+*.ckpt
+*.tmp
+
+.ipynb_checkpoints/
+
+# Python virtual environments
+Backend/.venv/
+
+# Node modules
+Frontend/node_modules/
+node_modules/
+
+# Git pack files (if accidentally tracked)
+*.pack
+*.idx

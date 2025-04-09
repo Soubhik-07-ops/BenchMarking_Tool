@@ -1,0 +1,42 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+
+
+.input-field {
+  width: 95%;
+  padding: 15px;
+  margin: 6px 0;
+  border-radius: 6px;
+  border: 1px solid #555;
+  background: #1b1c1d;
+  color: white;
+}
+
+.btn-primary {
+  width: 80%;
+  padding: 15px;
+  background: #7E22CE;
+  color: white;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: 0.3s;
+}
+
+.btn-primary:hover {
+  background: #6D1DB8;
+}
+
+.hidden-content {
+  display: none;
+}
+
+/* styles/globals.css */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
