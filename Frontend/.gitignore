@@ -1,6 +1,8 @@
 # Build output
 .next/
 out/
+dist/
+build/
 
 # Node modules
 node_modules/
@@ -18,6 +20,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+*.log
 
 # OS specific
 *.swp
@@ -38,8 +41,25 @@ coverage/
 
 # Misc
 *.local
-*.log
 
-# Production build
-dist/
-build/
+# --- Python Specific ---
+# Python virtual environment
+.venv/
+
+# Python cache and compiled files
+__pycache__/
+*.pyd
+*.dll
+*.so
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Model and temp files
+*.h5
+*.ckpt
+*.tmp
+
+# Git pack files (if accidentally tracked)
+*.pack
+*.idx

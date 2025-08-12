@@ -1,187 +1,59 @@
+# File: backend/app.py
+
 import os
-import zipfile
-import subprocess
-import shutil
-import json
-import traceback
-from fpdf import FPDF
-from flask import Flask, request, jsonify, send_file
-from werkzeug.utils import secure_filename
+import sys
+from flask import Flask, request, jsonify
 from flask_cors import CORS
+from supabase import create_client, Client
+
+# This line allows the app to find your benchmark script
+sys.path.append(os.path.join(os.getcwd(), 'python-scripts'))
+import benchmark_and_process
 
 app = Flask(__name__)
+# Enable CORS to allow requests from your Vercel frontend
 CORS(app)
 
-UPLOAD_FOLDER = "uploads"
-RESULTS_FOLDER = "results"
-ALLOWED_EXTENSIONS = {"keras", "h5", "onnx"}
-
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(RESULTS_FOLDER, exist_ok=True)
-
-app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
-app.config["RESULTS_FOLDER"] = RESULTS_FOLDER
-
-def allowed_file(filename):
-    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
-
-@app.route("/", methods=["GET"])
+@app.route('/')
 def index():
-    return jsonify({"message": "AI Model Benchmark API is running."}), 200
+    return "AI Benchmark Backend is running."
 
-@app.route("/", methods=["POST"])
-def upload_files():
+@app.route('/api/benchmark', methods=['POST'])
+def handle_benchmark():
+    """
+    This endpoint handles the entire benchmark process.
+    """
     try:
-        # Extract both models and both datasets
-        model_files = request.files.getlist("models")
-        dataset_files = request.files.getlist("datasets")
-
-        if len(model_files) != 2 or len(dataset_files) != 2:
-            return jsonify({"error": "Exactly 2 models and 2 datasets must be uploaded."}), 400
-
-        # Clean previous uploads
-        shutil.rmtree(UPLOAD_FOLDER, ignore_errors=True)
-        shutil.rmtree(RESULTS_FOLDER, ignore_errors=True)
-        os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-        os.makedirs(RESULTS_FOLDER, exist_ok=True)
-
-        model_paths = []
-        dataset_dirs = []
-
-        # Save models
-        for i, model_file in enumerate(model_files):
-            if not allowed_file(model_file.filename):
-                return jsonify({"error": f"Model {i+1} has an invalid extension."}), 400
-
-            ext = model_file.filename.rsplit(".", 1)[1].lower()
-            filename = secure_filename(f"model{i+1}.{ext}")
-            path = os.path.join(UPLOAD_FOLDER, filename)
-            model_file.save(path)
-            model_paths.append(path)
-
-        # Save and extract datasets
-        for i, dataset_file in enumerate(dataset_files):
-            if not dataset_file.filename.endswith(".zip"):
-                return jsonify({"error": f"Dataset {i+1} must be a ZIP file."}), 400
-
-            filename = secure_filename(f"dataset{i+1}.zip")
-            zip_path = os.path.join(UPLOAD_FOLDER, filename)
-            dataset_file.save(zip_path)
-
-            extract_dir = os.path.join(UPLOAD_FOLDER, f"dataset{i+1}")
-            os.makedirs(extract_dir, exist_ok=True)
-
-            with zipfile.ZipFile(zip_path, "r") as zip_ref:
-                zip_ref.extractall(extract_dir)
-            os.remove(zip_path)
-
-            dataset_dirs.append(extract_dir)
-
-        # Save config
-        config = {"models": model_paths, "datasets": dataset_dirs}
-        with open(os.path.join(UPLOAD_FOLDER, "config.json"), "w") as f:
-            json.dump(config, f)
-
-        # Run notebooks
-        subprocess.run([
-            "jupyter", "nbconvert", "--to", "notebook", "--execute", "process_notebook.ipynb",
-            "--output", os.path.join(RESULTS_FOLDER, "process_output.ipynb")
-        ], check=True)
-
-        subprocess.run([
-            "jupyter", "nbconvert", "--to", "notebook", "--execute", "metrics_notebook.ipynb",
-            "--output", os.path.join(RESULTS_FOLDER, "metrics_output.ipynb")
-        ], check=True)
-
-        generate_pdf_report()
-
+        # --- 1. Get File Paths from Frontend ---
+        data = request.get_json()
+        model1_path = data.get('model1Path')
+        dataset1_path = data.get('dataset1Path')
+        model2_path = data.get('model2Path')
+        dataset2_path = data.get('dataset2Path')
+        
+        supabase_paths = [model1_path, dataset1_path, model2_path, dataset2_path]
+        
+        # --- 2. Run the Benchmark ---
+        benchmark_results = benchmark_and_process.run_the_benchmark(supabase_paths)
+            
+        # --- 3. Automatic Cleanup ---
+        print("Cleaning up files from Supabase Storage:", supabase_paths)
+        supabase_url = os.environ.get("SUPABASE_URL")
+        supabase_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+        
+        if not supabase_url or not supabase_key:
+            # Log a warning but don't fail the request
+            print("Warning: Supabase credentials for cleanup not set.", file=sys.stderr)
+        else:
+            supabase: Client = create_client(supabase_url, supabase_key)
+            supabase.storage.from_("benchmarks").remove(files=supabase_paths)
+        
+        # --- 4. Return Success Response ---
         return jsonify({
-            "message": "Upload and comparison complete!",
-            "redirect": "/get_results"
-        }), 200
-
-    except subprocess.CalledProcessError as e:
-        return jsonify({"error": f"Notebook execution failed: {str(e)}"}), 500
+            "message": "Comparison complete!",
+            "data": benchmark_results
+        })
 
     except Exception as e:
-        return jsonify({
-            "error": "Internal server error",
-            "details": str(e),
-            "trace": traceback.format_exc()
-        }), 500
-
-@app.route("/get_results", methods=["GET"])
-def get_results():
-    try:
-        metrics_file = os.path.join(RESULTS_FOLDER, "metrics_output.json")
-        chart_file = os.path.join(UPLOAD_FOLDER, "performance_metrics.png")
-
-        if not os.path.exists(metrics_file):
-            return jsonify({"error": "Results not found."}), 404
-
-        with open(metrics_file, "r") as f:
-            data = json.load(f)
-
-        if os.path.exists(chart_file):
-            data["chart_url"] = request.host_url.rstrip("/") + "/download_benchmark"
-
-        return jsonify(data)
-
-    except Exception as e:
-        return jsonify({
-            "error": "Failed to load results",
-            "details": str(e),
-            "trace": traceback.format_exc()
-        }), 500
-
-@app.route("/download_benchmark", methods=["GET"])
-def download_benchmark():
-    path = os.path.join(UPLOAD_FOLDER, "performance_metrics.png")
-    if not os.path.exists(path):
-        return jsonify({"error": "Chart not found."}), 404
-    return send_file(path, as_attachment=True)
-
-@app.route("/download_report", methods=["GET"])
-def download_report():
-    path = os.path.join(RESULTS_FOLDER, "metrics_output.pdf")
-    if not os.path.exists(path):
-        return jsonify({"error": "PDF not found."}), 404
-    return send_file(path, as_attachment=True)
-
-def generate_pdf_report():
-    metrics_file = os.path.join(RESULTS_FOLDER, "metrics_output.json")
-    chart_file = os.path.join(UPLOAD_FOLDER, "performance_metrics.png")
-    pdf_path = os.path.join(RESULTS_FOLDER, "metrics_output.pdf")
-
-    if not os.path.exists(metrics_file):
-        return
-
-    with open(metrics_file, "r") as f:
-        data = json.load(f)
-
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
-
-    pdf.set_font("Arial", "B", 16)
-    pdf.cell(200, 10, "Model Benchmark Report", ln=True, align="C")
-    pdf.ln(10)
-
-    pdf.set_font("Arial", size=12)
-    for name, metrics in data.items():
-        if name == "chart_url":
-            continue
-        pdf.set_font("Arial", "B", 12)
-        pdf.cell(200, 10, f"{name}", ln=True)
-        pdf.set_font("Arial", size=12)
-        for key, value in metrics.items():
-            pdf.cell(200, 10, f"  {key.replace('_', ' ').title()}: {value}", ln=True)
-        pdf.ln(5)
-
-    if os.path.exists(chart_file):
-        pdf.image(chart_file, x=10, w=180)
-
-    pdf.output(pdf_path)
-
-if __name__ == "__main__":
-    app.run(debug=True)
+        print(f"❌ Benchmark API Error: {e}", file=sys.stderr)
+        return jsonify({"error": "An internal server error occurred.", "details": str(e)}), 500

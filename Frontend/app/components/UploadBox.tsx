@@ -80,12 +80,27 @@ export default function FileFolderUploader() {
     const router = useRouter();
     const allFilesUploaded = !!(model1File && dataset1File && model2File && dataset2File);
 
-    const simulateProgress = async () => {
-        const steps = [10, 30, 50, 75, 100];
-        for (const step of steps) {
-            setUploadProgress(step);
-            await new Promise((res) => setTimeout(res, 400));
+    const uploadFileToSupabase = async (file: File): Promise<string> => {
+        const getUrlResponse = await fetch('/api/storage/signed-url', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fileName: file.name }),
+        });
+        if (!getUrlResponse.ok) {
+            throw new Error('Failed to get a secure upload URL.');
         }
+        const { signedUrl, path } = await getUrlResponse.json();
+
+        const uploadResponse = await fetch(signedUrl, {
+            method: 'PUT',
+            body: file,
+            headers: { 'Content-Type': file.type || 'application/octet-stream' },
+        });
+
+        if (!uploadResponse.ok) {
+            throw new Error(`Failed to upload file to cloud storage.`);
+        }
+        return path;
     };
 
     const handleUpload = async () => {
@@ -95,38 +110,43 @@ export default function FileFolderUploader() {
         }
 
         setIsUploading(true);
-        const formData = new FormData();
-        formData.append("models", model1File);
-        formData.append("models", model2File);
-        formData.append("datasets", dataset1File);
-        formData.append("datasets", dataset2File);
+        setUploadProgress(10);
 
         try {
-            await simulateProgress();
-            const res = await fetch("http://127.0.0.1:5000/", {
+            toast.info("Uploading files to secure storage...");
+            setUploadProgress(30);
+
+            const [model1Path, model2Path, dataset1Path, dataset2Path] = await Promise.all([
+                uploadFileToSupabase(model1File!),
+                uploadFileToSupabase(model2File!),
+                uploadFileToSupabase(dataset1File!),
+                uploadFileToSupabase(dataset2File!),
+            ]);
+
+            toast.info("Files uploaded successfully. Starting benchmark...");
+            setUploadProgress(70);
+
+            const res = await fetch("/api/benchmark", {
                 method: "POST",
-                body: formData,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model1Path,
+                    model2Path,
+                    dataset1Path,
+                    dataset2Path,
+                }),
             });
 
-            let data: any = {};
-            try {
-                data = await res.json();
-            } catch {
-                const text = await res.text();
-                console.error("Failed to parse JSON:", text);
-                toast.error("Upload failed: Invalid server response.");
-                return;
-            }
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "Benchmark process failed.");
 
-            if (res.ok) {
-                toast.success(data.message || "Comparison started!");
-                setTimeout(() => router.push("/result"), 1000);
-            } else {
-                toast.error(data.message || "Upload failed. Server error.");
-            }
-        } catch (error) {
-            console.error("Upload error:", error);
-            toast.error("Upload failed. Check console.");
+            setUploadProgress(100);
+            toast.success("Benchmark complete!");
+            setTimeout(() => router.push("/result"), 1000);
+
+        } catch (error: any) {
+            console.error("Upload/Benchmark error:", error);
+            toast.error(error.message || "An unexpected error occurred.");
         } finally {
             setIsUploading(false);
             setUploadProgress(0);
@@ -167,10 +187,10 @@ export default function FileFolderUploader() {
                     <Dropzone
                         label="Upload Model 1"
                         icon={<UploadCloud size={48} className="text-purple-500" />}
-                        accept=".h5,.keras,.onnx"
+                        accept=".onnx" // <-- UPDATED
                         file={model1File}
                         setFile={setModel1File}
-                        disabled={allFilesUploaded}
+                        disabled={isUploading}
                     />
                     <div className="mt-6" />
                     <Dropzone
@@ -179,7 +199,7 @@ export default function FileFolderUploader() {
                         accept=".zip"
                         file={dataset1File}
                         setFile={setDataset1File}
-                        disabled={allFilesUploaded}
+                        disabled={isUploading}
                     />
                 </div>
             )}
@@ -192,10 +212,10 @@ export default function FileFolderUploader() {
                     <Dropzone
                         label="Upload Model 2"
                         icon={<UploadCloud size={48} className="text-blue-500" />}
-                        accept=".h5,.keras,.onnx"
+                        accept=".onnx" // <-- UPDATED
                         file={model2File}
                         setFile={setModel2File}
-                        disabled={allFilesUploaded}
+                        disabled={isUploading}
                     />
                     <div className="mt-6" />
                     <Dropzone
@@ -204,7 +224,7 @@ export default function FileFolderUploader() {
                         accept=".zip"
                         file={dataset2File}
                         setFile={setDataset2File}
-                        disabled={allFilesUploaded}
+                        disabled={isUploading}
                     />
                 </div>
             )}
@@ -236,9 +256,9 @@ export default function FileFolderUploader() {
                     {isUploading ? "Processing..." : "Compare Models"}
                 </button>
 
-                {allFilesUploaded && (
+                {allFilesUploaded && !isUploading && (
                     <div className="mt-4 text-center text-sm text-gray-500">
-                        ✅ All files uploaded. Refresh the page to upload again.
+                        ✅ All files ready. Click Compare Models to start.
                     </div>
                 )}
             </div>

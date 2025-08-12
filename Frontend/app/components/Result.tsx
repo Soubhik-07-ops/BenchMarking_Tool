@@ -25,7 +25,7 @@ export default function ResultPage() {
     const [chartType, setChartType] = useState<"line" | "bar">("line");
 
     useEffect(() => {
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/get_results`)
+        fetch("/api/results")
             .then((res) => {
                 if (!res.ok) throw new Error("Failed to fetch");
                 return res.json();
@@ -43,7 +43,8 @@ export default function ResultPage() {
     }, []);
 
     const handleDownloadReport = () => {
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/download_report`)
+        // FIX: Use the relative path to your API route
+        fetch("/api/report")
             .then((res) => {
                 if (!res.ok) throw new Error("Download error");
                 return res.blob();
@@ -56,6 +57,7 @@ export default function ResultPage() {
                 document.body.appendChild(a);
                 a.click();
                 a.remove();
+                window.URL.revokeObjectURL(url); // Clean up the object URL
                 toast.success("Report downloaded!");
             })
             .catch(() => toast.error("Failed to download report!"));
@@ -77,7 +79,8 @@ export default function ResultPage() {
 
     const formatMetricsForChart = (m1: Record<string, any>, m2: Record<string, any>) => {
         if (!m1 || !m2) return [];
-        const keys = Object.keys(m1);
+        // Filter out non-numeric or null values before charting
+        const keys = Object.keys(m1).filter(key => typeof m1[key] === 'number');
         return keys.map((key) => ({
             metric: key.replace(/_/g, " ").toUpperCase(),
             Model1: m1[key],
@@ -205,7 +208,7 @@ export default function ResultPage() {
                                             <strong className="text-white">
                                                 {key.replace(/_/g, " ").toUpperCase()}:
                                             </strong>{" "}
-                                            {value}
+                                            {value === null ? 'N/A' : value}
                                         </li>
                                     ))}
                                 </ul>
@@ -232,7 +235,7 @@ export default function ResultPage() {
                                             <strong className="text-white">
                                                 {key.replace(/_/g, " ").toUpperCase()}:
                                             </strong>{" "}
-                                            {value}
+                                            {value === null ? 'N/A' : value}
                                         </li>
                                     ))}
                                 </ul>
