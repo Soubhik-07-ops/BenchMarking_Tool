@@ -25,43 +25,23 @@ export default function ResultPage() {
     const [chartType, setChartType] = useState<"line" | "bar">("line");
 
     useEffect(() => {
-        fetch("/api/results")
-            .then((res) => {
-                if (!res.ok) throw new Error("Failed to fetch");
-                return res.json();
-            })
-            .then((data) => {
+        try {
+            // Get the results from session storage
+            const resultsData = sessionStorage.getItem('benchmarkResults');
+            if (resultsData) {
+                const data = JSON.parse(resultsData);
                 setMetrics1(data["Model 1"] || null);
                 setMetrics2(data["Model 2"] || null);
-            })
-            .catch(() => {
-                toast.error("Failed to load results!");
-            })
-            .finally(() => {
-                setLoading(false);
-            });
+            } else {
+                throw new Error("No benchmark data found in session.");
+            }
+        } catch (error) {
+            console.error("Failed to load results from session storage:", error);
+            toast.error("Failed to load results!");
+        } finally {
+            setLoading(false);
+        }
     }, []);
-
-    const handleDownloadReport = () => {
-        // FIX: Use the relative path to your API route
-        fetch("/api/report")
-            .then((res) => {
-                if (!res.ok) throw new Error("Download error");
-                return res.blob();
-            })
-            .then((blob) => {
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = "metrics_output.pdf";
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                window.URL.revokeObjectURL(url); // Clean up the object URL
-                toast.success("Report downloaded!");
-            })
-            .catch(() => toast.error("Failed to download report!"));
-    };
 
     const motionVariants = {
         initial: { opacity: 0, x: 50 },
@@ -105,6 +85,8 @@ export default function ResultPage() {
 
             {loading ? (
                 <p className="mt-20 text-gray-400 text-xl">Loading results...</p>
+            ) : (!metrics1 || !metrics2) ? (
+                <p className="mt-20 text-gray-400 text-xl">No results found. Please run a new benchmark.</p>
             ) : (
                 <div className="w-full max-w-6xl space-y-12">
                     {chartData.length > 0 && (
@@ -243,16 +225,6 @@ export default function ResultPage() {
                         )}
                     </AnimatePresence>
                 </div>
-            )}
-
-            {!loading && (metrics1 || metrics2) && (
-                <motion.button
-                    onClick={handleDownloadReport}
-                    whileHover={{ scale: 1.05, boxShadow: "0px 0px 20px rgba(236, 72, 153, 0.6)" }}
-                    className="mt-16 px-10 py-4 text-lg md:text-xl bg-fuchsia-600 rounded-lg transition font-bold hover:bg-fuchsia-700 cursor-pointer"
-                >
-                    Download Report
-                </motion.button>
             )}
         </div>
     );

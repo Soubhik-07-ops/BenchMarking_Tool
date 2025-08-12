@@ -126,10 +126,9 @@ export default function FileFolderUploader() {
             toast.info("Files uploaded successfully. Starting benchmark...");
             setUploadProgress(70);
 
-            // UPDATED: Fetch from the backend URL defined in your environment variables
             const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
             if (!backendUrl) {
-                throw new Error("Backend URL is not configured.");
+                throw new Error("Backend URL is not configured. Please check your .env.local file.");
             }
 
             const res = await fetch(`${backendUrl}/api/benchmark`, {
@@ -144,9 +143,11 @@ export default function FileFolderUploader() {
             });
 
             const data = await res.json();
-            if (!res.ok) throw new Error(data.details || data.error || "Benchmark process failed.");
+            if (!res.ok) {
+                throw new Error(data.details || data.error || "Benchmark process failed.");
+            }
 
-            // Since the backend no longer saves a temp file, we pass the data directly
+            // Save the results from the backend response directly to session storage
             sessionStorage.setItem('benchmarkResults', JSON.stringify(data.data));
 
             setUploadProgress(100);
@@ -196,7 +197,7 @@ export default function FileFolderUploader() {
                     <Dropzone
                         label="Upload Model 1"
                         icon={<UploadCloud size={48} className="text-purple-500" />}
-                        accept=".h5,.keras,.onnx" // <-- UPDATED
+                        accept=".h5,.keras,.onnx"
                         file={model1File}
                         setFile={setModel1File}
                         disabled={isUploading}
@@ -221,7 +222,7 @@ export default function FileFolderUploader() {
                     <Dropzone
                         label="Upload Model 2"
                         icon={<UploadCloud size={48} className="text-blue-500" />}
-                        accept=".h5,.keras,.onnx" // <-- UPDATED
+                        accept=".h5,.keras,.onnx"
                         file={model2File}
                         setFile={setModel2File}
                         disabled={isUploading}

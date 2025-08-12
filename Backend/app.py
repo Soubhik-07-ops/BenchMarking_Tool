@@ -11,8 +11,12 @@ sys.path.append(os.path.join(os.getcwd(), 'python-scripts'))
 import benchmark_and_process
 
 app = Flask(__name__)
-# Enable CORS to allow requests from your Vercel frontend
-CORS(app)
+
+# Configure CORS to allow requests from your local and deployed frontend
+CORS(app, resources={r"/api/*": {"origins": [
+    "http://localhost:3000",
+    "https://bench-marking-tool.vercel.app"  # <-- Your Vercel URL is now allowed
+]}})
 
 @app.route('/')
 def index():
