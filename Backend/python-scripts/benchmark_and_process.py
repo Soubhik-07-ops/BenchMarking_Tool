@@ -14,13 +14,16 @@ import matplotlib.pyplot as plt
 from fpdf import FPDF
 
 # Import Keras directly from TensorFlow
-from tensorflow.keras.models import load_model, Model
-from tensorflow.keras.layers import Dense, Input
+from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
-# --- Helper Functions (TensorFlow Version) ---
+# --- Helper Functions (Full Version) ---
 
 def auto_configure_and_evaluate(model_path, dataset_path):
+    """
+    Loads a model, evaluates its accuracy/MSE, and returns the metric
+    along with the model and generator configuration.
+    """
     model = load_model(model_path)
     with redirect_stdout(io.StringIO()):
         temp_gen = ImageDataGenerator(rescale=1./255).flow_from_directory(
@@ -50,6 +53,7 @@ def auto_configure_and_evaluate(model_path, dataset_path):
     return primary_metric, is_regression, model, test_gen
 
 def measure_latency(model, generator, n_runs=50):
+    """Measures average prediction time in milliseconds."""
     times = []
     generator.reset()
     for _ in range(min(n_runs, len(generator.filenames))):
@@ -60,6 +64,7 @@ def measure_latency(model, generator, n_runs=50):
     return np.mean(times) if times else 0
 
 def measure_throughput(model, generator):
+    """Measures inference throughput in images per second."""
     num_samples = len(generator.filenames)
     generator.reset()
     start = time.perf_counter()
@@ -68,6 +73,7 @@ def measure_throughput(model, generator):
     return num_samples / duration if duration > 0 else 0
 
 def visualize_comparison(metrics1, metrics2, out_path):
+    """Creates and saves a bar chart comparing the two models."""
     labels = ["Model 1", "Model 2"]
     keys = sorted([k for k, v in metrics1.items() if isinstance(v, (int, float))])
     vals1 = [float(metrics1.get(k, 0)) for k in keys]
@@ -88,6 +94,7 @@ def visualize_comparison(metrics1, metrics2, out_path):
     plt.close()
 
 def generate_pdf_report(data, chart_path, pdf_path):
+    """Generates a PDF report from the final metrics and chart."""
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
@@ -109,6 +116,7 @@ def generate_pdf_report(data, chart_path, pdf_path):
     pdf.output(pdf_path)
 
 def run_full_benchmark(model_path, dataset_path):
+    """Runs all evaluation and benchmarking for a single model."""
     print(f"📦 Starting full benchmark for: {model_path}", file=sys.stderr)
     primary_metric, is_regression, model, generator = auto_configure_and_evaluate(model_path, dataset_path)
     metrics = {
@@ -127,22 +135,25 @@ def run_full_benchmark(model_path, dataset_path):
     return metrics
 
 def run_the_benchmark(supabase_paths):
-    # Use a temporary directory that works on any OS
+    """
+    The main function called by the API. It orchestrates the entire process.
+    """
     TEMP_DIR = os.path.join(os.getcwd(), "temp_processing")
     if not os.path.exists(TEMP_DIR):
         os.makedirs(TEMP_DIR)
         
     try:
+        # Step 1: Initialize Supabase client
         supabase_url = os.environ.get("SUPABASE_URL")
         supabase_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
         if not supabase_url or not supabase_key:
-            raise ValueError("Supabase URL or Service Role Key is not set as environment variables.")
+            raise ValueError("Supabase URL or Service Role Key is not set.")
         from supabase import create_client, Client
         supabase: Client = create_client(supabase_url, supabase_key)
         
+        # Step 2: Download files
         local_paths = []
         print(f"📦 Downloading files from Supabase...", file=sys.stderr)
-
         for spath in supabase_paths:
             file_name = spath.split('/')[-1]
             local_file_path = os.path.join(TEMP_DIR, file_name)
@@ -154,6 +165,7 @@ def run_the_benchmark(supabase_paths):
 
         local_model1_path, local_dataset1_zip, local_model2_path, local_dataset2_zip = local_paths
         
+        # Step 3: Unzip datasets
         dataset1_dir = os.path.join(TEMP_DIR, "dataset1_extracted")
         dataset2_dir = os.path.join(TEMP_DIR, "dataset2_extracted")
         if os.path.exists(dataset1_dir): shutil.rmtree(dataset1_dir)
@@ -162,17 +174,25 @@ def run_the_benchmark(supabase_paths):
         with zipfile.ZipFile(local_dataset1_zip, "r") as zf: zf.extractall(dataset1_dir)
         with zipfile.ZipFile(local_dataset2_zip, "r") as zf: zf.extractall(dataset2_dir)
         
+        # Step 4: Run benchmarks
         metrics1 = run_full_benchmark(local_model1_path, dataset1_dir)
         metrics2 = run_full_benchmark(local_model2_path, dataset2_dir)
 
         combined_results = {"Model 1": metrics1, "Model 2": metrics2}
-        
-        # Note: PDF generation is disabled in this version as Render's temp filesystem is complex.
-        # The raw JSON data is returned instead.
 
+        # Step 5: Generate artifacts (Chart and PDF)
+        # Note: These are saved in the temp folder but not sent back directly.
+        # A future improvement could be to upload these back to Supabase.
+        chart_path = os.path.join(TEMP_DIR, "performance_metrics.png")
+        pdf_path = os.path.join(TEMP_DIR, "metrics_output.pdf")
+        
+        visualize_comparison(metrics1, metrics2, chart_path)
+        generate_pdf_report(combined_results, chart_path, pdf_path)
+
+        # Step 6: Return the JSON results
         return combined_results
 
     finally:
-        # Clean up the temporary directory
+        # Step 7: Clean up the temporary directory
         if os.path.exists(TEMP_DIR):
             shutil.rmtree(TEMP_DIR)

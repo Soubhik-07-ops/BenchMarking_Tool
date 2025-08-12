@@ -42,11 +42,10 @@ def handle_benchmark():
         supabase_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
         
         if not supabase_url or not supabase_key:
-            # Log a warning but don't fail the request
             print("Warning: Supabase credentials for cleanup not set.", file=sys.stderr)
         else:
             supabase: Client = create_client(supabase_url, supabase_key)
-            supabase.storage.from_("benchmarks").remove(files=supabase_paths)
+            supabase.storage.from_("benchmarks").remove(supabase_paths)
         
         # --- 4. Return Success Response ---
         return jsonify({
